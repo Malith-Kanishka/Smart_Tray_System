@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { ChevronDown, Edit3, Lock, Save, User, X } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { ChevronDown, Edit3, Lock, Save, User, X, Camera, Upload, Trash2 } from 'lucide-react';
 
 const MyProfile = ({ user, onRefresh }) => {
   const normalizedUser = {
@@ -20,11 +20,103 @@ const MyProfile = ({ user, onRefresh }) => {
   const [displayUser, setDisplayUser] = useState({ ...normalizedUser });
   const [profileData, setProfileData] = useState({ ...normalizedUser });
   const [error, setError] = useState("");
+  const [profilePicturePreview, setProfilePicturePreview] = useState(null);
+  const [selectedImageFile, setSelectedImageFile] = useState(null);
+  const [uploadingPicture, setUploadingPicture] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     setDisplayUser({ ...normalizedUser });
     setProfileData({ ...normalizedUser });
+    loadProfilePicture();
   }, [user]);
+
+  const loadProfilePicture = () => {
+    if (normalizedUser.staff_id) {
+      const possibleExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+      let foundImage = null;
+      
+      for (let ext of possibleExtensions) {
+        const imagePath = `http://localhost:5000/uploads/profile_picture/${normalizedUser.staff_id}${ext}`;
+        const img = new Image();
+        img.onload = () => {
+          setProfilePicturePreview(imagePath);
+        };
+        img.src = imagePath;
+      }
+    }
+  };
+
+  const handleProfileImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setSelectedImageFile(file);
+      const reader = new FileReader();
+      reader.onload = () => {
+        setProfilePicturePreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleUploadProfilePicture = async () => {
+    if (!selectedImageFile) {
+      alert("Please select an image first");
+      return;
+    }
+
+    setUploadingPicture(true);
+    const formData = new FormData();
+    formData.append("image", selectedImageFile);
+
+    try {
+      const res = await fetch(`http://localhost:5000/api/staff/upload-profile-picture/${normalizedUser.staff_id}`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (res.ok) {
+        alert("Profile picture uploaded successfully!");
+        setSelectedImageFile(null);
+        loadProfilePicture();
+      } else {
+        const data = await res.json();
+        alert(data.detail || "Failed to upload profile picture");
+      }
+    } catch (err) {
+      alert("Error uploading profile picture");
+    } finally {
+      setUploadingPicture(false);
+    }
+  };
+
+  const handleDeleteProfilePicture = async () => {
+    if (!profilePicturePreview) {
+      alert("No profile picture to delete");
+      return;
+    }
+
+    if (!window.confirm("Are you sure you want to delete your profile picture?")) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`http://localhost:5000/api/staff/delete-profile-picture/${normalizedUser.staff_id}`, {
+        method: 'DELETE'
+      });
+
+      if (res.ok) {
+        setProfilePicturePreview(null);
+        setSelectedImageFile(null);
+        alert("Profile picture deleted successfully!");
+      } else {
+        const data = await res.json();
+        alert(data.detail || "Failed to delete profile picture");
+      }
+    } catch (err) {
+      alert("Error deleting profile picture");
+    }
+  };
 
   const profileFields = [
     { label: 'ID', value: displayUser.staff_id || '-' },
@@ -121,13 +213,60 @@ const MyProfile = ({ user, onRefresh }) => {
           </div>
         </div>
 
-        <div className="p-8 grid grid-cols-2 gap-4">
-          {profileFields.map((field) => (
-            <div key={field.label} className={`bg-slate-50 rounded-2xl p-4 ${field.label === 'Address' ? 'col-span-2' : ''}`}>
-              <p className="text-sm font-black text-slate-500 uppercase tracking-wider">{field.label}</p>
-              <p className="text-lg text-black font-normal mt-1.5 wrap-break-word">{field.value}</p>
+        <div className="p-8 flex gap-8">
+          {/* Left Side - Profile Picture */}
+          <div className="flex flex-col items-center w-40 flex-shrink-0">
+            <div className="w-32 h-32 rounded-full bg-slate-100 border-4 border-slate-200 flex items-center justify-center overflow-hidden mb-4 flex-shrink-0">
+              {profilePicturePreview ? (
+                <img src={profilePicturePreview} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <Camera size={48} className="text-slate-300" />
+              )}
             </div>
-          ))}
+            
+            <input 
+              ref={fileInputRef}
+              type="file" 
+              className="hidden" 
+              accept="image/*" 
+              onChange={handleProfileImageChange}
+            />
+            
+            <button 
+              type="button"
+              onClick={() => {
+                if (selectedImageFile) {
+                  handleUploadProfilePicture();
+                } else {
+                  fileInputRef.current?.click();
+                }
+              }}
+              className="w-full mb-2 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition disabled:opacity-50"
+              disabled={uploadingPicture}
+            >
+              <Upload size={16}/> {selectedImageFile ? (uploadingPicture ? 'Uploading...' : 'Confirm Upload') : 'Upload Photo'}
+            </button>
+            
+            {profilePicturePreview && (
+              <button 
+                onClick={handleDeleteProfilePicture}
+                disabled={uploadingPicture}
+                className="w-full bg-red-100 hover:bg-red-500 text-red-600 hover:text-white py-2 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition disabled:opacity-50"
+              >
+                <Trash2 size={16}/> Delete Photo
+              </button>
+            )}
+          </div>
+
+          {/* Right Side - Profile Fields */}
+          <div className="flex-1 grid grid-cols-2 gap-4">
+            {profileFields.map((field) => (
+              <div key={field.label} className={`bg-slate-50 rounded-2xl p-4 ${field.label === 'Address' ? 'col-span-2' : ''}`}>
+                <p className="text-sm font-black text-slate-500 uppercase tracking-wider">{field.label}</p>
+                <p className="text-lg text-black font-normal mt-1.5 wrap-break-word">{field.value}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 import pymysql
 import os
+import shutil
+import glob
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 from datetime import date, datetime
@@ -17,6 +19,16 @@ DB_CONFIG = {
     'database': 'smart_tray',
     'cursorclass': pymysql.cursors.DictCursor
 }
+
+PROFILE_PICTURE_DIR = "uploads/profile_picture"
+os.makedirs(PROFILE_PICTURE_DIR, exist_ok=True)
+
+def remove_profile_picture_files(staff_id: str):
+    """Remove all profile picture files for a staff member"""
+    pattern = os.path.join(PROFILE_PICTURE_DIR, f"{staff_id}.*")
+    for matched_path in glob.glob(pattern):
+        if os.path.exists(matched_path):
+            os.remove(matched_path)
 
 class StaffMember(BaseModel):
     staff_name: str
@@ -171,3 +183,51 @@ async def change_password(data: PasswordChange):
             return {"message": "Password updated"}
     finally:
         conn.close()
+
+# Profile Picture Logic
+@router.post("/staff/upload-profile-picture/{staff_id}")
+async def upload_profile_picture(staff_id: str, image: UploadFile = File(...)):
+    """Upload or update profile picture for a staff member"""
+    conn = pymysql.connect(**DB_CONFIG)
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT staff_id FROM users WHERE staff_id=%s", (staff_id,))
+            user = cursor.fetchone()
+            if not user:
+                raise HTTPException(status_code=404, detail="Staff member not found")
+    finally:
+        conn.close()
+    
+    # Remove old profile picture if exists
+    remove_profile_picture_files(staff_id)
+    
+    # Save new profile picture with staff_id as filename
+    file_extension = os.path.splitext(image.filename)[1]
+    file_name = f"{staff_id}{file_extension}"
+    file_path = os.path.join(PROFILE_PICTURE_DIR, file_name)
+    
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(image.file, buffer)
+    
+    return {
+        "message": "Profile picture uploaded successfully",
+        "image_path": file_path
+    }
+
+@router.delete("/staff/delete-profile-picture/{staff_id}")
+async def delete_profile_picture(staff_id: str):
+    """Delete profile picture for a staff member"""
+    conn = pymysql.connect(**DB_CONFIG)
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT staff_id FROM users WHERE staff_id=%s", (staff_id,))
+            user = cursor.fetchone()
+            if not user:
+                raise HTTPException(status_code=404, detail="Staff member not found")
+    finally:
+        conn.close()
+    
+    # Remove profile picture files
+    remove_profile_picture_files(staff_id)
+    
+    return {"message": "Profile picture deleted successfully"}
