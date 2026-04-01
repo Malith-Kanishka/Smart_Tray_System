@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { ChevronDown, Edit3, Lock, Save, User, X, Camera, Upload, Trash2 } from 'lucide-react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import { ChevronDown, Edit3, Lock, Save, X, Camera, Upload, Trash2 } from 'lucide-react';
 
 const MyProfile = ({ user, onRefresh }) => {
-  const normalizedUser = {
+  const normalizedUser = useMemo(() => ({
     ...user,
     staff_id: user?.staff_id || "",
     staff_name: user?.staff_name || user?.fullName || user?.username || "-",
@@ -12,7 +12,7 @@ const MyProfile = ({ user, onRefresh }) => {
     address: user?.address || "-",
     dob: user?.dob || "",
     role: user?.role || "-",
-  };
+  }), [user]);
 
   const [isEditing, setIsEditing] = useState(false);
   const [showPassModal, setShowPassModal] = useState(false);
@@ -23,29 +23,59 @@ const MyProfile = ({ user, onRefresh }) => {
   const [profilePicturePreview, setProfilePicturePreview] = useState(null);
   const [selectedImageFile, setSelectedImageFile] = useState(null);
   const [uploadingPicture, setUploadingPicture] = useState(false);
+  const [pictureVersion, setPictureVersion] = useState(0);
   const fileInputRef = useRef(null);
+
+  const loadProfilePicture = useCallback(async (staffId) => {
+    if (!staffId) {
+      setProfilePicturePreview(null);
+      return;
+    }
+
+    const possibleExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+    setProfilePicturePreview(null);
+
+    for (const ext of possibleExtensions) {
+      const baseImagePath = `http://localhost:5000/uploads/profile_picture/${staffId}${ext}`;
+      const cacheBustedPath = `${baseImagePath}?v=${Date.now()}-${pictureVersion}`;
+
+      try {
+        const response = await fetch(cacheBustedPath, {
+          method: 'GET',
+          cache: 'no-store'
+        });
+        if (response.ok) {
+          setProfilePicturePreview(cacheBustedPath);
+          return;
+        }
+      } catch {
+        // Try next extension.
+      }
+    }
+  }, [pictureVersion]);
 
   useEffect(() => {
     setDisplayUser({ ...normalizedUser });
     setProfileData({ ...normalizedUser });
-    loadProfilePicture();
-  }, [user]);
+    setSelectedImageFile(null);
+    loadProfilePicture(normalizedUser.staff_id);
+  }, [normalizedUser, loadProfilePicture]);
 
-  const loadProfilePicture = () => {
-    if (normalizedUser.staff_id) {
-      const possibleExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
-      let foundImage = null;
-      
-      for (let ext of possibleExtensions) {
-        const imagePath = `http://localhost:5000/uploads/profile_picture/${normalizedUser.staff_id}${ext}`;
-        const img = new Image();
-        img.onload = () => {
-          setProfilePicturePreview(imagePath);
-        };
-        img.src = imagePath;
+  useEffect(() => {
+    const refreshPictureIfVisible = () => {
+      if (!document.hidden && normalizedUser.staff_id) {
+        setPictureVersion((prev) => prev + 1);
       }
-    }
-  };
+    };
+
+    window.addEventListener('focus', refreshPictureIfVisible);
+    document.addEventListener('visibilitychange', refreshPictureIfVisible);
+
+    return () => {
+      window.removeEventListener('focus', refreshPictureIfVisible);
+      document.removeEventListener('visibilitychange', refreshPictureIfVisible);
+    };
+  }, [normalizedUser.staff_id]);
 
   const handleProfileImageChange = (e) => {
     const file = e.target.files[0];
@@ -78,12 +108,12 @@ const MyProfile = ({ user, onRefresh }) => {
       if (res.ok) {
         alert("Profile picture uploaded successfully!");
         setSelectedImageFile(null);
-        loadProfilePicture();
+        setPictureVersion((prev) => prev + 1);
       } else {
         const data = await res.json();
         alert(data.detail || "Failed to upload profile picture");
       }
-    } catch (err) {
+    } catch {
       alert("Error uploading profile picture");
     } finally {
       setUploadingPicture(false);
@@ -108,12 +138,13 @@ const MyProfile = ({ user, onRefresh }) => {
       if (res.ok) {
         setProfilePicturePreview(null);
         setSelectedImageFile(null);
+        setPictureVersion((prev) => prev + 1);
         alert("Profile picture deleted successfully!");
       } else {
         const data = await res.json();
         alert(data.detail || "Failed to delete profile picture");
       }
-    } catch (err) {
+    } catch {
       alert("Error deleting profile picture");
     }
   };
@@ -215,8 +246,8 @@ const MyProfile = ({ user, onRefresh }) => {
 
         <div className="p-8 flex gap-8">
           {/* Left Side - Profile Picture */}
-          <div className="flex flex-col items-center w-40 flex-shrink-0">
-            <div className="w-32 h-32 rounded-full bg-slate-100 border-4 border-slate-200 flex items-center justify-center overflow-hidden mb-4 flex-shrink-0">
+          <div className="flex flex-col items-center w-40 shrink-0">
+            <div className="w-32 h-32 rounded-full bg-slate-100 border-4 border-slate-200 flex items-center justify-center overflow-hidden mb-4 shrink-0">
               {profilePicturePreview ? (
                 <img src={profilePicturePreview} alt="Profile" className="w-full h-full object-cover" />
               ) : (
