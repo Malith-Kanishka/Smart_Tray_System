@@ -1,13 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Plus, Edit2, Trash2, X, Upload, Camera } from 'lucide-react';
 
 const MenuCatalog = () => {
+  const location = useLocation();
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [menuItems, setMenuItems] = useState([]);
   const [formData, setFormData] = useState({ name: "", price: "", description: "" });
   const [selectedFile, setSelectedFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
+  const [imageVersion, setImageVersion] = useState(0);
+  const fileInputRef = useRef(null);
+  const possibleExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
   const [formError, setFormError] = useState("");
 
   const fetchMenu = async () => {
@@ -18,6 +23,9 @@ const MenuCatalog = () => {
 
   useEffect(() => {
     let isMounted = true;
+
+    // Increment imageVersion to force cache-busting on every navigation to this page
+    setImageVersion(Date.now());
 
     const loadMenu = async () => {
       const res = await fetch('http://localhost:5000/api/menu');
@@ -31,19 +39,24 @@ const MenuCatalog = () => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [location.key]);
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
       setSelectedFile(file);
-      setImagePreview(URL.createObjectURL(file));
+      const reader = new FileReader();
+      reader.onload = () => {
+        setImagePreview(reader.result);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
   const removeImage = () => {
     setSelectedFile(null);
     setImagePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = null;
   };
 
   const handleSubmit = async (e) => {
@@ -72,6 +85,7 @@ const MenuCatalog = () => {
       fetchMenu();
       removeImage();
       setFormError("");
+      setImageVersion((v) => v + 1);
     }
   };
 
@@ -79,6 +93,7 @@ const MenuCatalog = () => {
     if (window.confirm("Delete this item?")) {
       await fetch(`http://localhost:5000/api/menu/delete/${id}`, { method: 'DELETE' });
       fetchMenu();
+      setImageVersion((v) => v + 1);
     }
   };
 
@@ -101,31 +116,43 @@ const MenuCatalog = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {menuItems.map((item) => (
-          <div key={item.menuID} className="bg-white rounded-4xl overflow-hidden border border-slate-100 shadow-sm group hover:shadow-xl transition-all">
-            <div className="h-52 overflow-hidden relative">
-              <img src={`http://localhost:5000/${item.image_path}`} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" alt={item.name} />
-              <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-md px-4 py-1.5 rounded-full text-xs font-black text-slate-900 shadow-sm">
-                {item.menuID}
+        {menuItems.map((item) => {
+          let imageUrl = null;
+          for (const ext of possibleExtensions) {
+            if (item.image_path && item.image_path.endsWith(ext)) {
+              imageUrl = `http://localhost:5000/${item.image_path}?v=${imageVersion}`;
+              break;
+            }
+          }
+          if (!imageUrl && item.image_path) {
+            imageUrl = `http://localhost:5000/${item.image_path}?v=${imageVersion}`;
+          }
+          return (
+            <div key={item.menuID} className="bg-white rounded-4xl overflow-hidden border border-slate-100 shadow-sm group hover:shadow-xl transition-all">
+              <div className="h-52 overflow-hidden relative">
+                <img src={imageUrl} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" alt={item.name} />
+                <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-md px-4 py-1.5 rounded-full text-xs font-black text-slate-900 shadow-sm">
+                  {item.menuID}
+                </div>
+              </div>
+              <div className="p-6">
+                <div className="flex justify-between items-start mb-2">
+                  <h3 className="text-xl font-bold text-slate-800">{item.name}</h3>
+                  <span className="text-blue-600 font-black text-lg">Rs.{item.price}</span>
+                </div>
+                <p className="text-slate-500 text-sm leading-relaxed mb-6 line-clamp-2">{item.description}</p>
+                <div className="flex gap-3">
+                  <button onClick={() => { setEditingItem(item); setFormData(item); setImagePreview(imageUrl); setFormError(""); setShowModal(true); }} className="flex-1 bg-slate-50 text-slate-600 py-3 rounded-xl font-bold hover:bg-blue-50 hover:text-blue-600 transition flex items-center justify-center gap-2">
+                    <Edit2 size={16}/> Edit
+                  </button>
+                  <button onClick={() => handleDelete(item.menuID)} className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition">
+                    <Trash2 size={18}/>
+                  </button>
+                </div>
               </div>
             </div>
-            <div className="p-6">
-              <div className="flex justify-between items-start mb-2">
-                <h3 className="text-xl font-bold text-slate-800">{item.name}</h3>
-                <span className="text-blue-600 font-black text-lg">Rs.{item.price}</span>
-              </div>
-              <p className="text-slate-500 text-sm leading-relaxed mb-6 line-clamp-2">{item.description}</p>
-              <div className="flex gap-3">
-                <button onClick={() => { setEditingItem(item); setFormData(item); setImagePreview(`http://localhost:5000/${item.image_path}`); setFormError(""); setShowModal(true); }} className="flex-1 bg-slate-50 text-slate-600 py-3 rounded-xl font-bold hover:bg-blue-50 hover:text-blue-600 transition flex items-center justify-center gap-2">
-                  <Edit2 size={16}/> Edit
-                </button>
-                <button onClick={() => handleDelete(item.menuID)} className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition">
-                  <Trash2 size={18}/>
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {showModal && (
@@ -152,7 +179,7 @@ const MenuCatalog = () => {
                   <label className="w-full h-28 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100 transition">
                     <Camera size={28} className="text-slate-300 mb-2"/>
                     <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Upload Image</span>
-                    <input type="file" className="hidden" accept="image/*" onChange={handleImageChange} required={!editingItem}/>
+                    <input type="file" className="hidden" accept="image/*" ref={fileInputRef} onChange={handleImageChange} required={!editingItem}/>
                   </label>
                 ) : (
                   <div className="relative w-full h-32 rounded-xl overflow-hidden border-4 border-slate-50">
