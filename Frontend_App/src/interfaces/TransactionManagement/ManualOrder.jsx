@@ -1,10 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Plus, Minus, ShoppingCart, ArrowLeft, Trash2, XCircle, Tag } from 'lucide-react';
 
 const STOCK_UPDATED_EVENT = 'smarttray-stock-updated';
 
 const ManualOrder = ({ user, onProceed, isActive = false }) => {
   const [menuItems, setMenuItems] = useState([]);
+  const [imageVersion, setImageVersion] = useState(Date.now());
+  const possibleExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+  const location = useLocation();
   const [cart, setCart] = useState({});
   const [viewSummary, setViewSummary] = useState(false);
   const [currentOrderId, setCurrentOrderId] = useState(null);
@@ -32,6 +36,7 @@ const ManualOrder = ({ user, onProceed, isActive = false }) => {
 
   // 1. Fetch Menu and promotions from Database
   useEffect(() => {
+    setImageVersion(Date.now()); // force cache-busting on navigation
     const fetchActiveSeasonalDiscount = async () => {
       try {
         const promoRes = await fetch('http://localhost:5000/api/promotions/seasonal');
@@ -332,10 +337,22 @@ const ManualOrder = ({ user, onProceed, isActive = false }) => {
           const inCart = cart[food.menuID] || 0;
           const atStockLimit = stockQty !== null && inCart >= stockQty;
 
+          // Image cache-busting and extension support
+          let imageUrl = null;
+          for (const ext of possibleExtensions) {
+            if (food.image_path && food.image_path.endsWith(ext)) {
+              imageUrl = `http://localhost:5000/${food.image_path}?v=${imageVersion}`;
+              break;
+            }
+          }
+          if (!imageUrl && food.image_path) {
+            imageUrl = `http://localhost:5000/${food.image_path}?v=${imageVersion}`;
+          }
+
           return (
             <div key={food.menuID} className={`bg-white rounded-4xl overflow-hidden border border-slate-100 shadow-sm hover:shadow-md transition-all group ${isOutOfStock ? 'opacity-60' : ''}`}>
               <div className="h-48 overflow-hidden relative">
-                <img src={`http://localhost:5000/${food.image_path}`} alt={food.name} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" />
+                <img src={imageUrl} alt={food.name} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" />
                 {food.daily_discount > 0 && (
                   <div className="absolute top-4 right-4 bg-blue-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg">
                     {`${Number(food.daily_discount)}% OFF`}

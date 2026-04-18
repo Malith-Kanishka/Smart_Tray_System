@@ -63,15 +63,17 @@ async def add_menu_item(
     file_extension = os.path.splitext(image.filename)[1]
     file_name = f"{menu_id}{file_extension}"
     file_path = os.path.join(UPLOAD_DIR, file_name)
-
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(image.file, buffer)
+
+    # Save only the relative path for image_path, with correct extension
+    relative_image_path = f"uploads/menu/{file_name}"
 
     connection = pymysql.connect(**DB_CONFIG)
     try:
         with connection.cursor() as cursor:
             sql = "INSERT INTO menu (menuID, name, price, description, image_path) VALUES (%s, %s, %s, %s, %s)"
-            cursor.execute(sql, (menu_id, name, price, description, file_path))
+            cursor.execute(sql, (menu_id, name, price, description, relative_image_path))
             connection.commit()
             return {"message": "Item added successfully"}
     finally:
@@ -101,8 +103,10 @@ async def update_menu_item(
                 file_path = os.path.join(UPLOAD_DIR, file_name)
                 with open(file_path, "wb") as buffer:
                     shutil.copyfileobj(image.file, buffer)
+                # Save only the relative path for image_path, with correct extension
+                relative_image_path = f"uploads/menu/{file_name}"
                 sql = "UPDATE menu SET name=%s, price=%s, description=%s, image_path=%s WHERE menuID=%s"
-                cursor.execute(sql, (name, price, description, file_path, menuID))
+                cursor.execute(sql, (name, price, description, relative_image_path, menuID))
             else:
                 sql = "UPDATE menu SET name=%s, price=%s, description=%s WHERE menuID=%s"
                 cursor.execute(sql, (name, price, description, menuID))
